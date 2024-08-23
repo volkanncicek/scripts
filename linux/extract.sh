@@ -53,7 +53,4 @@ main() {
     done
 }
 
-# alias for extract_file 
-alias extract=extract_file
-
 main "$@"
