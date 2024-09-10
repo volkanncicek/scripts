@@ -60,7 +60,6 @@ echo This process may take a while, please be patient...
   echo y | chkdsk C: /f
 ) || (
   echo INFO: Errors found or disk in use. Scheduling check on reboot.
-  echo y | chkdsk C: /f
   if %errorlevel% neq 0 (
     echo ERROR: Disk check failed!
     goto :error
