@@ -35,13 +35,14 @@
         HIGHLIGHT_COLOR: 'rgba(255, 215, 0, 0.4)',
         DEBOUNCE_DELAY: 300,
         ACTION_DELAY: 500,
-        // UI_UPDATE_INTERVAL: 2000, // No longer needed for status text updates
         INIT_DELAY: 1500,
         MAX_SCROLL_ATTEMPTS: 10,
         ELEMENT_WAIT_TIMEOUT: 5000,
         STATUS_MESSAGE_DURATION: 2000, // How long to show "Updated" / "Found!" (ms)
         MAX_INIT_ATTEMPTS: 10, // Maximum number of initialization attempts
         INIT_RETRY_DELAY: 1000, // Delay between initialization attempts
+        // Filter keywords for excluding live/streamed content
+        LIVE_STREAM_KEYWORDS: ['yayınlandı', 'canlı', 'streamed'],
     };
 
     // --- Constants ---
@@ -50,6 +51,7 @@
         VIDEO_LINK: 'a#video-title-link',
         VIDEO_THUMBNAIL_LINK: 'a#thumbnail',
         VIDEO_TITLE: '#video-title',
+        VIDEO_META_BLOCK: 'ytd-video-meta-block',
         CHANNEL_NAME: '#channel-name a, ytd-channel-name a',
         ORIGINAL_SECTION_TARGET: '#primary ytd-section-list-renderer, #primary ytd-rich-grid-renderer, #dismissible.style-scope.ytd-shelf-renderer',
         ORIGINAL_TITLE_TARGET: 'h2, yt-formatted-string.title, #title-container h2 #title',
@@ -67,12 +69,10 @@
 
     // --- Simplified UI Text ---
     const UI_TEXT = {
-        // TITLE: "YT Sub Tracker", // Removed
         GO_TO_LAST_BUTTON: "Go to Last Video",
         UPDATE_LIST_BUTTON: "Update Marker",
-        STATUS_UPDATED: "Updated!", // Shortened
-        STATUS_FOUND: "Found!",     // Shortened
-        // Other statuses removed as they won't be displayed
+        STATUS_UPDATED: "Updated!",
+        STATUS_FOUND: "Found!",
     };
 
     // Keep colors for potential future use or subtle effects
@@ -276,7 +276,6 @@
             this.setStatus(''); // Clear previous status
             this.uiElements?.goToButton?.setAttribute('disabled', 'true');
             this.uiElements?.updateButton?.setAttribute('disabled', 'true');
-            // this._startUiUpdateLoop(); // No longer needed
 
             let found = false;
             try {
@@ -286,7 +285,6 @@
                 // No visual error message needed
             } finally {
                 this.state.isSearching = false;
-                // this._stopUiUpdateLoop(); // No longer needed
 
                 // Re-enable buttons first
                 this.uiElements?.goToButton?.removeAttribute('disabled');
@@ -304,9 +302,6 @@
         }
 
         async _searchLoop() {
-            // No UI update needed here in the loop start
-            // this.updateUI();
-
             while (this.state.scrollAttempts < this.config.MAX_SCROLL_ATTEMPTS) {
                 const currentVideos = this.findVisibleVideos();
 
@@ -342,25 +337,15 @@
             for (const element of elements) {
                 const rect = element.getBoundingClientRect();
                 if (rect.bottom < -200 || rect.top > window.innerHeight + 200) { }
-                if (element.querySelector(SELECTORS.SHORTS_VIDEO) ||
-                    element.querySelector(SELECTORS.LIVE_BADGE) ||
-                    element.querySelector(SELECTORS.UPCOMING_BADGE)) {
+                
+                if (this._shouldSkipVideo(element)) {
                     continue;
                 }
-                const linkElement = element.querySelector(SELECTORS.VIDEO_LINK) || element.querySelector(SELECTORS.VIDEO_THUMBNAIL_LINK);
-                if (!linkElement?.href?.includes('watch?v=')) { continue; }
-                let videoId = null;
-                const href = linkElement.href;
-                const match = href.match(/watch\?v=([^&]+)/);
-                if (match && match[1]) { videoId = match[1]; }
-                if (!videoId) continue;
-                const titleElement = element.querySelector(SELECTORS.VIDEO_TITLE);
-                const channelElement = element.querySelector(SELECTORS.CHANNEL_NAME);
-                const title = titleElement ? titleElement.textContent.trim() : 'Unknown Video';
-                const channel = channelElement ? channelElement.textContent.trim() : 'Unknown Channel';
-                videoElements.push({
-                    id: videoId, title: title, channel: channel, element: element, position: rect.top + window.scrollY
-                });
+                
+                const videoData = this._extractVideoData(element);
+                if (videoData) {
+                    videoElements.push(videoData);
+                }
             }
             videoElements.sort((a, b) => a.position - b.position);
 
@@ -373,6 +358,59 @@
 
             return videoElements;
         }
+
+        _shouldSkipVideo(element) {
+            // Skip shorts, live badges, and upcoming content
+            if (element.querySelector(SELECTORS.SHORTS_VIDEO) ||
+                element.querySelector(SELECTORS.LIVE_BADGE) ||
+                element.querySelector(SELECTORS.UPCOMING_BADGE)) {
+                return true;
+            }
+
+            // Skip past live/streamed content based on metadata text
+            const metaBlock = element.querySelector(SELECTORS.VIDEO_META_BLOCK);
+            const metaText = metaBlock ? (metaBlock.textContent || '').toLowerCase() : '';
+            if (this.config.LIVE_STREAM_KEYWORDS.some(keyword => metaText.includes(keyword))) {
+                return true;
+            }
+
+            return false;
+        }
+
+        _extractVideoData(element) {
+            // Extract video link and ID
+            const linkElement = element.querySelector(SELECTORS.VIDEO_LINK) || element.querySelector(SELECTORS.VIDEO_THUMBNAIL_LINK);
+            if (!linkElement?.href?.includes('watch?v=')) {
+                return null;
+            }
+
+            const href = linkElement.href;
+            const match = href.match(/watch\?v=([^&]+)/);
+            if (!match || !match[1]) {
+                return null;
+            }
+
+            const videoId = match[1];
+            
+            // Extract title and channel
+            const titleElement = element.querySelector(SELECTORS.VIDEO_TITLE);
+            const channelElement = element.querySelector(SELECTORS.CHANNEL_NAME);
+            const title = titleElement ? titleElement.textContent.trim() : 'Unknown Video';
+            const channel = channelElement ? channelElement.textContent.trim() : 'Unknown Channel';
+
+            // Calculate position
+            const rect = element.getBoundingClientRect();
+            const position = rect.top + window.scrollY;
+
+            return {
+                id: videoId,
+                title: title,
+                channel: channel,
+                element: element,
+                position: position
+            };
+        }
+
         _scrollToElement(element) {
             const targetY = element.getBoundingClientRect().top + window.scrollY - this.config.SCROLL_OFFSET;
             window.scrollTo({ top: targetY, behavior: 'smooth' });
@@ -625,7 +663,7 @@
             return arr1.every((item, index) => item === arr2[index]);
         }
 
-    } // --- End of YouTubeTracker Class ---
+    }
 
     // --- Initialization ---
     console.log("YT Sub Tracker Script Loaded");
