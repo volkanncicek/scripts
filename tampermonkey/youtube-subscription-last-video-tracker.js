@@ -43,12 +43,7 @@
     // Filter keywords for excluding live/streamed content
     LIVE_STREAM_KEYWORDS: ["yayınlandı", "canlı", "streamed"],
     // Filter keywords for excluding upcoming/scheduled content
-    UPCOMING_KEYWORDS: [
-      "tarihinde yayında",
-      "yakında",
-      "scheduled",
-      "premiere",
-    ],
+    UPCOMING_KEYWORDS: ["tarihinde yayında", "yakında", "scheduled", "premiere"],
   };
 
   // --- Constants ---
@@ -67,8 +62,7 @@
     UPCOMING_BADGE: ".badge-style-type-live-now-alternate",
     UPCOMING_OVERLAY: '[overlay-style="UPCOMING"]',
     CONTINUATION_ITEM: "ytd-continuation-item-renderer",
-    SPINNER:
-      "#spinnerContainer.active, #spinner.ytd-feed-filter-chip-bar-renderer",
+    SPINNER: "#spinnerContainer.active, #spinner.ytd-feed-filter-chip-bar-renderer",
     UI_CONTAINER_ID: "yt-sub-tracker-ui",
     RECENT_UPLOADS_SECTION: "#dismissible.style-scope.ytd-shelf-renderer",
     RECENT_UPLOADS_HEADER: "#title-container",
@@ -104,18 +98,12 @@
           goToButton: this._createButton(
             UI_TEXT.GO_TO_LAST_BUTTON,
             "#f00",
-            debounce(
-              this.findAndGoToLastMarked.bind(this),
-              this.config.DEBOUNCE_DELAY
-            )
+            debounce(this.findAndGoToLastMarked.bind(this), this.config.DEBOUNCE_DELAY)
           ),
           updateButton: this._createButton(
             UI_TEXT.UPDATE_LIST_BUTTON,
             "#3ea6ff",
-            debounce(
-              this.updateMarkerList.bind(this),
-              this.config.DEBOUNCE_DELAY
-            )
+            debounce(this.updateMarkerList.bind(this), this.config.DEBOUNCE_DELAY)
           ),
         },
         scrollAttempts: 0,
@@ -129,21 +117,12 @@
 
         lastPageUrl: window.location.href, // Track page URL changes
       };
-      this.debouncedHandlePageChange = debounce(
-        this._handlePageChange.bind(this),
-        this.config.DEBOUNCE_DELAY * 5
-      ); // Much longer debounce
+      this.debouncedHandlePageChange = debounce(this._handlePageChange.bind(this), this.config.DEBOUNCE_DELAY * 5); // Much longer debounce
       this.state.markedVideos = this._loadData(this.config.STORAGE_KEY, []);
-      console.log(
-        "YT Sub Tracker (Minimal UI): Initialized. Loaded markers:",
-        this.state.markedVideos
-      );
+      console.log("YT Sub Tracker (Minimal UI): Initialized. Loaded markers:", this.state.markedVideos);
 
       // Add event listeners for tab closing/switching
-      window.addEventListener(
-        "beforeunload",
-        this._handlePageUnload.bind(this)
-      );
+      window.addEventListener("beforeunload", this._handlePageUnload.bind(this));
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden") {
           this._handlePageUnload(); // Call without event for visibilitychange
@@ -157,8 +136,7 @@
     // Handle page closing/tab switching - unified method
     _handlePageUnload(event) {
       if (this.state.hasUnsavedChanges) {
-        const message =
-          "Remember to save your last marked position before leaving!";
+        const message = "Remember to save your last marked position before leaving!";
 
         // For beforeunload event, show browser warning AND mark that it was shown
         if (event && event.type === "beforeunload") {
@@ -171,19 +149,14 @@
 
         // For visibility change, only store warning if beforeunload wasn't already shown
         if (!event || event.type === "visibilitychange") {
-          const beforeunloadShown = sessionStorage.getItem(
-            "yt_sub_tracker_beforeunload_shown"
-          );
+          const beforeunloadShown = sessionStorage.getItem("yt_sub_tracker_beforeunload_shown");
           if (!beforeunloadShown) {
             const warningData = {
               url: window.location.href,
               timestamp: Date.now(),
               message: message,
             };
-            localStorage.setItem(
-              "yt_sub_tracker_warning",
-              JSON.stringify(warningData)
-            );
+            localStorage.setItem("yt_sub_tracker_warning", JSON.stringify(warningData));
           }
         }
       }
@@ -202,19 +175,15 @@
       const visibleVideos = this.findVisibleVideos();
 
       if (visibleVideos.length === 0) {
-        console.warn(
-          "YT Sub Tracker: No videos found on screen to set marker."
-        );
+        console.warn("YT Sub Tracker: No videos found on screen to set marker.");
         // No visual feedback needed as per requirement
       } else {
-        const videosToStore = visibleVideos
-          .slice(0, this.config.MAX_STORED_VIDEOS)
-          .map((v) => ({
-            id: v.id,
-            title: v.title,
-            channel: v.channel,
-            timestamp: Date.now(),
-          }));
+        const videosToStore = visibleVideos.slice(0, this.config.MAX_STORED_VIDEOS).map((v) => ({
+          id: v.id,
+          title: v.title,
+          channel: v.channel,
+          timestamp: Date.now(),
+        }));
 
         this.state.markedVideos = videosToStore;
         this._saveData(this.config.STORAGE_KEY, this.state.markedVideos);
@@ -222,10 +191,7 @@
         // Clear any existing warning data
         localStorage.removeItem("yt_sub_tracker_warning");
         this.setStatus(UI_TEXT.STATUS_UPDATED, STATUS_COLORS.SUCCESS); // Show temporary message
-        console.log(
-          "YT Sub Tracker: Updated marker with videos:",
-          this.state.markedVideos
-        );
+        console.log("YT Sub Tracker: Updated marker with videos:", this.state.markedVideos);
       }
 
       // Re-enable buttons and potentially clear message after delay
@@ -235,9 +201,7 @@
       this.updateUI(); // Update button states (GoTo might now be enabled)
 
       // Clear the "Updated" message after a duration
-      if (
-        this.state.uiElements?.statusText.textContent === UI_TEXT.STATUS_UPDATED
-      ) {
+      if (this.state.uiElements?.statusText.textContent === UI_TEXT.STATUS_UPDATED) {
         this._clearStatusAfterDelay();
       }
     }
@@ -252,10 +216,7 @@
         if (warningData) {
           const data = JSON.parse(warningData);
           // Only show warning if it's from the same URL and within last 5 minutes
-          if (
-            data.url === window.location.href &&
-            Date.now() - data.timestamp < 5 * 60 * 1000
-          ) {
+          if (data.url === window.location.href && Date.now() - data.timestamp < 5 * 60 * 1000) {
             alert(data.message);
             localStorage.removeItem("yt_sub_tracker_warning");
           }
@@ -304,15 +265,9 @@
       }
 
       // Check for key elements that indicate the page is ready
-      const hasRecentUploadsSection = !!this._getCachedElements(
-        SELECTORS.RECENT_UPLOADS_SECTION
-      ).length;
-      const hasPageSection = !!this._getCachedElements(
-        SELECTORS.ORIGINAL_SECTION_TARGET
-      ).length;
-      const hasFallbackParent = !!this._getCachedElements(
-        SELECTORS.ORIGINAL_FALLBACK_PARENT
-      ).length;
+      const hasRecentUploadsSection = !!this._getCachedElements(SELECTORS.RECENT_UPLOADS_SECTION).length;
+      const hasPageSection = !!this._getCachedElements(SELECTORS.ORIGINAL_SECTION_TARGET).length;
+      const hasFallbackParent = !!this._getCachedElements(SELECTORS.ORIGINAL_FALLBACK_PARENT).length;
 
       // Page is ready if any of these elements exist
       return hasRecentUploadsSection || hasPageSection || hasFallbackParent;
@@ -322,9 +277,7 @@
     async findAndGoToLastMarked() {
       if (this.state.isSearching) return;
       if (this.state.markedVideos.length === 0) {
-        console.warn(
-          "YT Sub Tracker: 'Go to Last Marked' clicked, but no marker set."
-        );
+        console.warn("YT Sub Tracker: 'Go to Last Marked' clicked, but no marker set.");
         // No visual feedback needed
         return;
       }
@@ -336,9 +289,7 @@
       this.state.uiElements?.updateButton?.setAttribute("disabled", "true");
 
       // Check if we can find the video in current viewport first (use cached elements)
-      console.log(
-        "YT Sub Tracker: Starting search - checking current viewport first"
-      );
+      console.log("YT Sub Tracker: Starting search - checking current viewport first");
 
       let found = false;
       try {
@@ -348,22 +299,15 @@
 
         // If not found in viewport, check all loaded videos first before scrolling
         if (!found) {
-          console.log(
-            "YT Sub Tracker: Target video not in viewport, checking all loaded videos"
-          );
+          console.log("YT Sub Tracker: Target video not in viewport, checking all loaded videos");
 
           // Get all videos on page (not just visible ones) - this is much faster than scrolling
           const allLoadedVideos = this._getAllLoadedVideos();
-          found = this._findTargetVideoInList(
-            allLoadedVideos,
-            "loaded content"
-          );
+          found = this._findTargetVideoInList(allLoadedVideos, "loaded content");
 
           // Only start scrolling search if video is not in already loaded content
           if (!found) {
-            console.log(
-              "YT Sub Tracker: Target video not in loaded content, starting scroll search"
-            );
+            console.log("YT Sub Tracker: Target video not in loaded content, starting scroll search");
             found = await this._searchLoop();
           }
         }
@@ -399,9 +343,7 @@
         // Not found on current screen - try to scroll and load more
         const scrolled = await this._scrollAndLoadMore();
         if (!scrolled) {
-          console.log(
-            "YT Sub Tracker: Cannot scroll further or no more content"
-          );
+          console.log("YT Sub Tracker: Cannot scroll further or no more content");
           return false; // End of feed or cannot load more
         }
 
@@ -437,16 +379,14 @@
       console.log("YT Sub Tracker: Cache cleared");
     }
 
-    // --- DOM Interaction ---
+    // --- DOM Interaction (findVisibleVideos, _getAllLoadedVideos, _scrollToElement, _highlightElement, _canLoadMore, _waitForLoad) ---
 
     _findTargetVideoInList(videoList, context = "") {
       for (const markedVideo of this.state.markedVideos) {
         const foundVideo = videoList.find((v) => v.id === markedVideo.id);
         if (foundVideo) {
           if (context) {
-            console.log(
-              `YT Sub Tracker: Found target video in ${context} - no scrolling needed!`
-            );
+            console.log(`YT Sub Tracker: Found target video in ${context} - no scrolling needed!`);
           }
           this.setStatus(UI_TEXT.STATUS_FOUND, STATUS_COLORS.SUCCESS);
           this._scrollToElement(foundVideo.element);
@@ -473,9 +413,7 @@
         }
       }
 
-      console.log(
-        `YT Sub Tracker: Found ${videoElements.length} total loaded videos on page`
-      );
+      console.log(`YT Sub Tracker: Found ${videoElements.length} total loaded videos on page`);
       return videoElements;
     }
 
@@ -502,14 +440,9 @@
 
       // Set hasUnsavedChanges if we found videos and they're different from last saved
       if (videoElements.length > 0) {
-        const currentVideoIds = videoElements
-          .slice(0, this.config.MAX_STORED_VIDEOS)
-          .map((v) => v.id);
+        const currentVideoIds = videoElements.slice(0, this.config.MAX_STORED_VIDEOS).map((v) => v.id);
         const markedVideoIds = this.state.markedVideos.map((v) => v.id);
-        this.state.hasUnsavedChanges = !areArraysEqual(
-          currentVideoIds,
-          markedVideoIds
-        );
+        this.state.hasUnsavedChanges = !areArraysEqual(currentVideoIds, markedVideoIds);
       }
 
       return videoElements;
@@ -528,23 +461,13 @@
 
       // Skip past live/streamed content based on metadata text
       const metaBlock = element.querySelector(SELECTORS.VIDEO_META_BLOCK);
-      const metaText = metaBlock
-        ? (metaBlock.textContent || "").toLowerCase()
-        : "";
-      if (
-        this.config.LIVE_STREAM_KEYWORDS.some((keyword) =>
-          metaText.includes(keyword)
-        )
-      ) {
+      const metaText = metaBlock ? (metaBlock.textContent || "").toLowerCase() : "";
+      if (this.config.LIVE_STREAM_KEYWORDS.some((keyword) => metaText.includes(keyword))) {
         return true;
       }
 
       // Skip upcoming videos based on metadata text
-      if (
-        this.config.UPCOMING_KEYWORDS.some((keyword) =>
-          metaText.includes(keyword)
-        )
-      ) {
+      if (this.config.UPCOMING_KEYWORDS.some((keyword) => metaText.includes(keyword))) {
         return true;
       }
 
@@ -554,8 +477,7 @@
     _extractVideoData(element) {
       // Extract video link and ID
       const linkElement =
-        element.querySelector(SELECTORS.VIDEO_LINK) ||
-        element.querySelector(SELECTORS.VIDEO_THUMBNAIL_LINK);
+        element.querySelector(SELECTORS.VIDEO_LINK) || element.querySelector(SELECTORS.VIDEO_THUMBNAIL_LINK);
       if (!linkElement?.href?.includes("watch?v=")) {
         return null;
       }
@@ -571,12 +493,8 @@
       // Extract title and channel
       const titleElement = element.querySelector(SELECTORS.VIDEO_TITLE);
       const channelElement = element.querySelector(SELECTORS.CHANNEL_NAME);
-      const title = titleElement
-        ? titleElement.textContent.trim()
-        : "Unknown Video";
-      const channel = channelElement
-        ? channelElement.textContent.trim()
-        : "Unknown Channel";
+      const title = titleElement ? titleElement.textContent.trim() : "Unknown Video";
+      const channel = channelElement ? channelElement.textContent.trim() : "Unknown Channel";
 
       // Calculate position
       const rect = element.getBoundingClientRect();
@@ -592,10 +510,7 @@
     }
 
     _scrollToElement(element) {
-      const targetY =
-        element.getBoundingClientRect().top +
-        window.scrollY -
-        this.config.SCROLL_OFFSET;
+      const targetY = element.getBoundingClientRect().top + window.scrollY - this.config.SCROLL_OFFSET;
       window.scrollTo({
         top: targetY,
         behavior: "smooth",
@@ -637,12 +552,9 @@
 
     async _canLoadMore() {
       // Check for continuation items or spinners, but also check if we're not at the very bottom
-      const hasContinuation = !!this._getCachedElements(
-        SELECTORS.CONTINUATION_ITEM
-      ).length;
+      const hasContinuation = !!this._getCachedElements(SELECTORS.CONTINUATION_ITEM).length;
       const hasSpinner = !!this._getCachedElements(SELECTORS.SPINNER).length;
-      const notAtBottom =
-        window.scrollY + window.innerHeight < document.body.scrollHeight - 50;
+      const notAtBottom = window.scrollY + window.innerHeight < document.body.scrollHeight - 50;
 
       return hasContinuation || hasSpinner || notAtBottom;
     }
@@ -652,8 +564,7 @@
       const maxAttempts = 20; // 4 seconds max (20 * 200ms)
 
       while (attempts < maxAttempts) {
-        const hasSpinner =
-          document.querySelectorAll(SELECTORS.SPINNER).length > 0;
+        const hasSpinner = document.querySelectorAll(SELECTORS.SPINNER).length > 0;
         if (!hasSpinner) break;
 
         await this._wait(200);
@@ -691,14 +602,9 @@
         return;
       }
 
-      const recentUploadsSections = this._getCachedElements(
-        SELECTORS.RECENT_UPLOADS_SECTION
-      );
-      const recentUploadsSection =
-        recentUploadsSections.length > 0 ? recentUploadsSections[0] : null;
-      const titleContainer = recentUploadsSection?.querySelector(
-        SELECTORS.RECENT_UPLOADS_HEADER
-      );
+      const recentUploadsSections = this._getCachedElements(SELECTORS.RECENT_UPLOADS_SECTION);
+      const recentUploadsSection = recentUploadsSections.length > 0 ? recentUploadsSections[0] : null;
+      const titleContainer = recentUploadsSection?.querySelector(SELECTORS.RECENT_UPLOADS_HEADER);
 
       if (recentUploadsSection && titleContainer) {
         const container = this.createUI();
@@ -744,8 +650,7 @@
 
       // Button Container
       const buttonContainer = document.createElement("div");
-      buttonContainer.style.cssText =
-        "display: inline-flex; gap: 6px; vertical-align: middle;";
+      buttonContainer.style.cssText = "display: inline-flex; gap: 6px; vertical-align: middle;";
 
       // Reuse existing buttons
       buttonContainer.appendChild(this.state.uiElements.goToButton);
@@ -795,17 +700,11 @@
 
       goToButton.style.opacity = goToButton.disabled ? "0.6" : "1";
       goToButton.style.cursor = goToButton.disabled ? "not-allowed" : "pointer";
-      goToButton.style.filter = goToButton.disabled
-        ? "grayscale(60%)"
-        : "brightness(1)";
+      goToButton.style.filter = goToButton.disabled ? "grayscale(60%)" : "brightness(1)";
 
       updateButton.style.opacity = updateButton.disabled ? "0.6" : "1";
-      updateButton.style.cursor = updateButton.disabled
-        ? "not-allowed"
-        : "pointer";
-      updateButton.style.filter = updateButton.disabled
-        ? "grayscale(60%)"
-        : "brightness(1)";
+      updateButton.style.cursor = updateButton.disabled ? "not-allowed" : "pointer";
+      updateButton.style.filter = updateButton.disabled ? "grayscale(60%)" : "brightness(1)";
     }
 
     // --- MODIFIED setStatus ---
@@ -820,10 +719,7 @@
       }
 
       // Only display text for specific messages
-      if (
-        message === UI_TEXT.STATUS_UPDATED ||
-        message === UI_TEXT.STATUS_FOUND
-      ) {
+      if (message === UI_TEXT.STATUS_UPDATED || message === UI_TEXT.STATUS_FOUND) {
         this.state.uiElements.statusText.textContent = message;
         this.state.uiElements.statusText.style.color = color;
         // Don't automatically clear here, let caller decide (using _clearStatusAfterDelay)
@@ -850,10 +746,42 @@
       }, 2000); // Fixed 2 second duration
     }
 
+    // --- Storage (_saveData, _loadData) ---
+    _saveData(key, data) {
+      try {
+        GM_setValue(key, JSON.stringify(data));
+      } catch (e) {
+        console.error("YT ST: Save GM Error", e);
+        try {
+          localStorage.setItem(key, JSON.stringify(data));
+        } catch (e2) {
+          console.error("YT ST: Save LS Error", e2);
+        }
+      }
+    }
+    _loadData(key, defaultValue) {
+      try {
+        let v = GM_getValue(key);
+        if (v !== undefined && v !== null) {
+          if (v.trim() !== "") return JSON.parse(v);
+        }
+      } catch (e) {
+        console.error("YT ST: Load GM Error", e, "Val:", GM_getValue(key));
+      }
+      try {
+        let v = localStorage.getItem(key);
+        if (v !== undefined && v !== null) {
+          if (v.trim() !== "") return JSON.parse(v);
+        }
+      } catch (e2) {
+        console.error("YT ST: Load LS Error", e2, "Val:", localStorage.getItem(key));
+      }
+      return defaultValue;
+    }
+
     // --- Observation & Helpers
     setupObserver() {
-      const targetNode =
-        document.querySelector("ytd-page-manager") || document.body;
+      const targetNode = document.querySelector("ytd-page-manager") || document.body;
       const observer = new MutationObserver(this.debouncedHandlePageChange);
       observer.observe(targetNode, {
         childList: true,
@@ -869,9 +797,7 @@
 
       // Skip invalidation if we're actively searching and URL hasn't changed
       if (this.state.isSearching && !urlChanged) {
-        console.log(
-          "YT Sub Tracker: Skipping cache invalidation - search in progress, no URL change"
-        );
+        console.log("YT Sub Tracker: Skipping cache invalidation - search in progress, no URL change");
         return;
       }
 
@@ -905,44 +831,6 @@
       } else {
         this.updateUI();
       }
-    }
-
-    // --- Storage ---
-    _saveData(key, data) {
-      try {
-        GM_setValue(key, JSON.stringify(data));
-      } catch (e) {
-        console.error("YT ST: Save GM Error", e);
-        try {
-          localStorage.setItem(key, JSON.stringify(data));
-        } catch (e2) {
-          console.error("YT ST: Save LS Error", e2);
-        }
-      }
-    }
-    _loadData(key, defaultValue) {
-      try {
-        let v = GM_getValue(key);
-        if (v !== undefined && v !== null) {
-          if (v.trim() !== "") return JSON.parse(v);
-        }
-      } catch (e) {
-        console.error("YT ST: Load GM Error", e, "Val:", GM_getValue(key));
-      }
-      try {
-        let v = localStorage.getItem(key);
-        if (v !== undefined && v !== null) {
-          if (v.trim() !== "") return JSON.parse(v);
-        }
-      } catch (e2) {
-        console.error(
-          "YT ST: Load LS Error",
-          e2,
-          "Val:",
-          localStorage.getItem(key)
-        );
-      }
-      return defaultValue;
     }
 
     _wait(ms) {
