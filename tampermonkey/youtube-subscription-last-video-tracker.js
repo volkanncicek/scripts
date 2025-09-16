@@ -41,9 +41,10 @@
     DEBOUNCE_DELAY: 300,
     MAX_SCROLL_ATTEMPTS: 15,
     // Filter keywords for excluding live/streamed content
-    LIVE_STREAM_KEYWORDS: ["yayınlandı", "canlı", "streamed"],
+    // include Turkish and English variants that indicate a live stream or live viewers
+    LIVE_STREAM_KEYWORDS: ["yayınlandı", "canlı", "streamed", "izliyor", "watching", "live"],
     // Filter keywords for excluding upcoming/scheduled content
-    UPCOMING_KEYWORDS: ["tarihinde yayında", "yakında", "scheduled", "premiere"],
+    UPCOMING_KEYWORDS: ["tarihinde yayında", "yakında", "scheduled", "premiere", "planlandı", "planlanıyor"],
   };
 
   // --- Constants ---
@@ -52,6 +53,8 @@
     VIDEO_LINK: "a#video-title-link",
     VIDEO_THUMBNAIL_LINK: "a#thumbnail",
     VIDEO_TITLE: "#video-title",
+    // Generic watch link selector (more resilient to YouTube DOM changes)
+    WATCH_LINK: 'a[href*="/watch?v="]',
     VIDEO_META_BLOCK: "ytd-video-meta-block",
     CHANNEL_NAME: "#channel-name a, ytd-channel-name a",
     ORIGINAL_SECTION_TARGET:
@@ -121,8 +124,15 @@
       this.state.markedVideos = this._loadData(this.config.STORAGE_KEY, []);
       console.log("YT Sub Tracker (Minimal UI): Initialized. Loaded markers:", this.state.markedVideos);
 
-      // Add event listeners for tab closing/switching
-      window.addEventListener("beforeunload", this._handlePageUnload.bind(this));
+      // Add event listeners for tab closing/switching (guarded)
+      try {
+        // Some embed/sandboxed contexts forbid unload; wrap in try/catch
+        if (typeof window.addEventListener === "function") {
+          window.addEventListener("beforeunload", this._handlePageUnload.bind(this));
+        }
+      } catch (e) {
+        console.warn("YT Sub Tracker: beforeunload listener not allowed in this context", e);
+      }
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "hidden") {
           this._handlePageUnload(); // Call without event for visibilitychange
@@ -398,54 +408,54 @@
     }
 
     _getAllLoadedVideos() {
-      // Similar to findVisibleVideos but without viewport restrictions - gets ALL videos on page
-      const videoElements = [];
-      const elements = this._getCachedElements(SELECTORS.VIDEO_ITEM);
+      // More resilient approach: find anchors that link to watch?v= and derive video container
+      const videoMap = new Map(); // dedupe by video id
+      const anchors = document.querySelectorAll(SELECTORS.WATCH_LINK);
 
-      for (const element of elements) {
-        if (this._shouldSkipVideo(element)) {
-          continue;
-        }
+      for (const a of anchors) {
+        const href = a.href || a.getAttribute('href') || '';
+        const match = href.match(/watch\?v=([^&]+)/);
+        if (!match) continue;
+        const videoId = match[1];
+        if (videoMap.has(videoId)) continue; // already captured
 
-        const videoData = this._extractVideoData(element);
-        if (videoData) {
-          videoElements.push(videoData);
-        }
+        // Prefer closest known YouTube item containers, fallback to anchor's parent element
+        const container = a.closest(
+          'ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-rich-grid-renderer, ytd-rich-shelf-renderer, ytd-rich-item-renderer, ytd-rich-item-renderer, ytm-shorts-lockup-view-model, ytd-rich-item-renderer'
+        ) || a.parentElement;
+
+        if (!container) continue;
+        if (this._shouldSkipVideo(container)) continue;
+
+        const data = this._extractVideoDataFromAnchor(a, container);
+        if (data) videoMap.set(videoId, data);
       }
 
+      const videoElements = Array.from(videoMap.values()).sort((a, b) => a.position - b.position);
       console.log(`YT Sub Tracker: Found ${videoElements.length} total loaded videos on page`);
       return videoElements;
     }
 
     findVisibleVideos() {
-      const videoElements = [];
-      const elements = this._getCachedElements(SELECTORS.VIDEO_ITEM);
+      // Use the anchor-derived video list but filter by viewport intersection
+      const allVideos = this._getAllLoadedVideos();
+      const visible = [];
 
-      for (const element of elements) {
-        const rect = element.getBoundingClientRect();
-        if (rect.bottom < -200 || rect.top > window.innerHeight + 200) {
-          continue;
-        }
-
-        if (this._shouldSkipVideo(element)) {
-          continue;
-        }
-
-        const videoData = this._extractVideoData(element);
-        if (videoData) {
-          videoElements.push(videoData);
-        }
+      for (const v of allVideos) {
+        const rect = v.element.getBoundingClientRect();
+        if (rect.bottom < -200 || rect.top > window.innerHeight + 200) continue;
+        visible.push(v);
       }
-      videoElements.sort((a, b) => a.position - b.position);
 
-      // Set hasUnsavedChanges if we found videos and they're different from last saved
-      if (videoElements.length > 0) {
-        const currentVideoIds = videoElements.slice(0, this.config.MAX_STORED_VIDEOS).map((v) => v.id);
+      visible.sort((a, b) => a.position - b.position);
+
+      if (visible.length > 0) {
+        const currentVideoIds = visible.slice(0, this.config.MAX_STORED_VIDEOS).map((v) => v.id);
         const markedVideoIds = this.state.markedVideos.map((v) => v.id);
         this.state.hasUnsavedChanges = !areArraysEqual(currentVideoIds, markedVideoIds);
       }
 
-      return videoElements;
+      return visible;
     }
 
     _shouldSkipVideo(element) {
@@ -459,52 +469,74 @@
         return true;
       }
 
-      // Skip past live/streamed content based on metadata text
-      const metaBlock = element.querySelector(SELECTORS.VIDEO_META_BLOCK);
-      const metaText = metaBlock ? (metaBlock.textContent || "").toLowerCase() : "";
-      if (this.config.LIVE_STREAM_KEYWORDS.some((keyword) => metaText.includes(keyword))) {
-        return true;
-      }
+      // Inspect textual badges/overlays and metadata to detect live or upcoming items
+      try {
+        // 1) Check textual badges inside the element (e.g., 'CANLI', 'LIVE', viewer counts like 'izliyor')
+        const badgeTexts = Array.from(element.querySelectorAll('badge-shape, .yt-badge-shape, .badge, .yt-badge')).map(
+          (n) => (n.textContent || '').trim().toLowerCase()
+        );
+        for (const t of badgeTexts) {
+          if (!t) continue;
+          if (t.includes('canli') || t.includes('live') || t.includes('izliyor') || t.includes('izliyor')) return true;
+        }
 
-      // Skip upcoming videos based on metadata text
-      if (this.config.UPCOMING_KEYWORDS.some((keyword) => metaText.includes(keyword))) {
-        return true;
+        // 2) Check overlay-style elements which sometimes contain 'UPCOMING' or localized strings
+        const overlayText = (element.querySelector('[overlay-style], .overlay, .badge-text, .yt-badge-shape__text')?.textContent || '').toLowerCase();
+        if (overlayText) {
+          if (this.config.LIVE_STREAM_KEYWORDS.some((keyword) => overlayText.includes(keyword))) return true;
+          if (this.config.UPCOMING_KEYWORDS.some((keyword) => overlayText.includes(keyword))) return true;
+        }
+
+        // 3) Skip based on meta text (duration, publish info). Use trimmed lowercase
+        const metaBlock = element.querySelector(SELECTORS.VIDEO_META_BLOCK) || element;
+        const metaText = (metaBlock.textContent || '').toLowerCase();
+        if (this.config.LIVE_STREAM_KEYWORDS.some((keyword) => metaText.includes(keyword))) {
+          return true;
+        }
+        if (this.config.UPCOMING_KEYWORDS.some((keyword) => metaText.includes(keyword))) {
+          return true;
+        }
+      } catch (e) {
+        // If any DOM query fails, don't block the whole script; default to not skipping
+        console.warn('YT Sub Tracker: Error while checking live/upcoming badges', e);
       }
 
       return false;
     }
 
     _extractVideoData(element) {
-      // Extract video link and ID
-      const linkElement =
-        element.querySelector(SELECTORS.VIDEO_LINK) || element.querySelector(SELECTORS.VIDEO_THUMBNAIL_LINK);
-      if (!linkElement?.href?.includes("watch?v=")) {
-        return null;
-      }
+      // Legacy method - try to extract from anchor inside element
+      const a = element.querySelector(SELECTORS.WATCH_LINK);
+      if (!a) return null;
+      return this._extractVideoDataFromAnchor(a, element);
+    }
 
-      const href = linkElement.href;
+    _extractVideoDataFromAnchor(anchor, container) {
+      const href = anchor.href || anchor.getAttribute('href') || '';
       const match = href.match(/watch\?v=([^&]+)/);
-      if (!match || !match[1]) {
-        return null;
-      }
-
+      if (!match) return null;
       const videoId = match[1];
 
-      // Extract title and channel
-      const titleElement = element.querySelector(SELECTORS.VIDEO_TITLE);
-      const channelElement = element.querySelector(SELECTORS.CHANNEL_NAME);
-      const title = titleElement ? titleElement.textContent.trim() : "Unknown Video";
-      const channel = channelElement ? channelElement.textContent.trim() : "Unknown Channel";
+      // Title: prefer anchor text or a nearby title element
+      let title = (anchor.textContent || '').trim();
+      if (!title) {
+        const titleEl = container.querySelector('a[href*="/watch?v="] > yt-formatted-string, #video-title, h3 a, .yt-lockup-metadata-view-model__title');
+        title = titleEl ? titleEl.textContent.trim() : 'Unknown Video';
+      }
 
-      // Calculate position
-      const rect = element.getBoundingClientRect();
+      // Channel: try common channel link patterns
+      let channel = 'Unknown Channel';
+      const channelEl = container.querySelector('a[href*="/channel/"], a[href*="/@"], ytd-channel-name a, #channel-name a');
+      if (channelEl) channel = channelEl.textContent.trim();
+
+      const rect = container.getBoundingClientRect();
       const position = rect.top + window.scrollY;
 
       return {
         id: videoId,
         title: title,
         channel: channel,
-        element: element,
+        element: container,
         position: position,
       };
     }
